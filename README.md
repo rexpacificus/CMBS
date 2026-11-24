@@ -1,6 +1,7 @@
 # CMBS Loan-Tape Validator
 
 Validates loan-level CMBS data from SEC Form ABS-EE (Exhibit 102, the asset data file), runs credit stress tests, and produces a one-page table of flagged loans.
+
 ## Results: WFCM 2022-C62 (Oct 2025 remittance)
 
 Ran on the SEC ABS-EE asset data for Wells Fargo Commercial Mortgage Trust 2022-C62: 46 loans, $522M current balance.
@@ -11,13 +12,13 @@ Ran on the SEC ABS-EE asset data for Wells Fargo Commercial Mortgage Trust 2022-
 - Reappraisals cut values by up to 63% (Oakridge Apartments $23.7M → $8.7M)
 - Recomputed DSCRs tied out to servicer-reported DSCRs on every loan
 
-See `WFCM_2022-C62_validation.pdf` for the full one-page report.
+Full one-page report: [`WFCM_2022-C62_validation.pdf`](WFCM_2022-C62_validation.pdf) · flagged loans: [`flagged_loans.csv`](flagged_loans.csv)
 
 ## Run it
 
 ```bash
-pip install pandas numpy
-python validator.py exh_102.xml --out report.html --csv flagged_loans.csv --title "BMARK 2022-Bxx, Oct 2025 remittance"
+pip install -r requirements.txt
+python validator.py exh_102.xml --out report.html --csv flagged_loans.csv --title "WFCM 2022-C62, Oct 2025"
 ```
 
 ## Getting a real tape from EDGAR
@@ -43,7 +44,7 @@ python validator.py exh_102.xml --out report.html --csv flagged_loans.csv --titl
 | CR03 | Credit | LTV above 75% |
 | CR04 | Credit | Debt yield below 8% |
 | CR05 | Credit | Matures within 24 months |
-| CR06 | Credit | Occupancy down 10+ pts, or below 80% |
+| CR06 | Credit | Occupancy down 10+ pts, or below 80% (non-hotel; hotels normally run 65-80%) |
 | CR07 | Credit | Annualized NOI down 20%+ vs underwriting |
 | CR08 | Credit | Delinquent, P&I advances outstanding, or non-recoverable |
 
@@ -61,4 +62,6 @@ python validator.py exh_102.xml --out report.html --csv flagged_loans.csv --titl
 
 - `validator.py`: parser, checks, stress, report
 - `make_sample_tape.py`: builds a **synthetic** test tape in the SEC schema with planted errors (one per check), used to verify every check fires
-- `sample_report.html` / `.pdf`: output on the synthetic tape (not real deal data)
+- `exh_102.xml`: the real ABS-EE asset data file for WFCM 2022-C62 from SEC EDGAR (public)
+- `WFCM_2022-C62_validation.pdf`, `flagged_loans.csv`: output on the real deal
+- `requirements.txt`: Python dependencies
