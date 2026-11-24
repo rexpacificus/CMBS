@@ -1,67 +1,57 @@
-# CMBS Loan-Tape Validator
+**CMBS loan-tape validator**
 
-Validates loan-level CMBS data from SEC Form ABS-EE (Exhibit 102, the asset data file), runs credit stress tests, and produces a one-page table of flagged loans.
+I built this to check the loan-level data that CMBS deals file with the SEC every month (Form ABS-EE, Exhibit 102). It reads the XML, runs data-quality and credit checks on every loan, stress tests DSCR, and writes a one-page report of the loans that need a closer look.
 
-## Results: WFCM 2022-C62 (Oct 2025 remittance)
+**What it found on WFCM 2022-C62**
 
-Ran on the SEC ABS-EE asset data for Wells Fargo Commercial Mortgage Trust 2022-C62: 46 loans, $522M current balance.
+I ran it on the October 2025 filing for Wells Fargo Commercial Mortgage Trust 2022-C62, a conduit deal with 46 loans and $522M outstanding. Six loans came out high severity, $93.7M or about 18% of the pool. The worst is 530 Bush Street, a San Francisco office building where occupancy fell from 84% to 37% and NOI is now negative. Three NYC mixed-use loans from the same lender are all 90+ days delinquent, and new appraisals have cut some property values by more than half (Oakridge Apartments went from $23.7M to $8.7M). As a sanity check, the DSCRs I recomputed from raw NOI and debt service matched the servicer's reported numbers on every loan.
 
-- **6 high-severity loans, $93.7M (17.9% of pool)**
-- 530 Bush Street (SF office): occupancy 84% → 37%, NOI negative
-- Three NYC mixed-use loans from the same originator, all 90+ days delinquent
-- Reappraisals cut values by up to 63% (Oakridge Apartments $23.7M → $8.7M)
-- Recomputed DSCRs tied out to servicer-reported DSCRs on every loan
+The full report is in [WFCM_2022-C62_validation.pdf](WFCM_2022-C62_validation.pdf) and the flagged loans are in [flagged_loans.csv](flagged_loans.csv).
 
-Full one-page report: [`WFCM_2022-C62_validation.pdf`](WFCM_2022-C62_validation.pdf) · flagged loans: [`flagged_loans.csv`](flagged_loans.csv)
-
-## Run it
+**Running it**
 
 ```bash
 pip install -r requirements.txt
 python validator.py exh_102.xml --out report.html --csv flagged_loans.csv --title "WFCM 2022-C62, Oct 2025"
 ```
 
-## Getting a real tape from EDGAR
+To try another deal, search EDGAR for ABS-EE filings from a conduit shelf (Benchmark, BBCMS, BANK, WFCM and so on), open a recent filing and download its exh_102.xml. Deals from 2021 and 2022 are the most interesting since their numbers have had time to move away from underwriting.
 
-1. Go to EDGAR full-text search, filter form type `ABS-EE`, search a conduit shelf (Benchmark, BBCMS, BANK, Wells Fargo Commercial Mortgage Trust, Morgan Stanley Capital I, Citigroup Commercial Mortgage Trust).
-2. Pick a **2021 to 2022 vintage** deal and take its **latest** monthly ABS-EE. Seasoned deals are where most-recent NOI, occupancy and DSCR have drifted from underwriting, and 2022 deals are hitting the refi wall.
-3. Open the filing index and download `exh_102.xml`.
+**The checks**
 
-## Checks
+| ID | Check |
+|----|-------|
+| DQ01 | Missing critical fields |
+| DQ02 | Duplicate asset number |
+| DQ03 | Current balance above original amount |
+| DQ04 | Interest rate outside 1% to 15% |
+| DQ05 | Maturity doesn't match origination date plus term |
+| DQ06 | Reported DSCR doesn't tie to NOI / debt service |
+| DQ07 | Financials more than 18 months old |
+| DQ08 | Occupancy outside 0 to 100% |
+| CR01 | DSCR below 1.00x |
+| CR02 | DSCR between 1.00x and 1.25x |
+| CR03 | LTV above 75% |
+| CR04 | Debt yield below 8% |
+| CR05 | Matures within 24 months |
+| CR06 | Occupancy down 10+ points, or below 80% (not applied to hotels, which normally run 65 to 80%) |
+| CR07 | Annualized NOI down 20%+ from underwriting |
+| CR08 | Delinquent, has advances outstanding, or marked non-recoverable |
 
-| ID | Type | Check |
-|----|------|-------|
-| DQ01 | Data quality | Missing critical fields |
-| DQ02 | Data quality | Duplicate asset number |
-| DQ03 | Data quality | Current balance above original amount |
-| DQ04 | Data quality | Interest rate outside 1% to 15% (unit errors) |
-| DQ05 | Data quality | Maturity inconsistent with origination date + term |
-| DQ06 | Data quality | Reported DSCR doesn't tie to NOI / debt service |
-| DQ07 | Data quality | Financials more than 18 months stale |
-| DQ08 | Data quality | Occupancy outside 0 to 100% |
-| CR01 | Credit | DSCR below 1.00x |
-| CR02 | Credit | DSCR 1.00x to 1.25x (watch) |
-| CR03 | Credit | LTV above 75% |
-| CR04 | Credit | Debt yield below 8% |
-| CR05 | Credit | Matures within 24 months |
-| CR06 | Credit | Occupancy down 10+ pts, or below 80% (non-hotel; hotels normally run 65-80%) |
-| CR07 | Credit | Annualized NOI down 20%+ vs underwriting |
-| CR08 | Credit | Delinquent, P&I advances outstanding, or non-recoverable |
+DQ checks catch problems with the data itself and CR checks catch credit risk. For the stress tests I cut NOI by 10% and 20%, add 200bp to any floating-rate loans, and run a refinance test where each loan has to refinance at maturity at its rate plus 200bp on a 30-year amortization with NOI down 10%. Loans that fail DQ03, DQ04 or DQ06 are left out of the stress tests since their inputs can't be trusted.
 
-**Stress:** NOI down 10% and 20%; +200bp on floating-rate loans; refi test at maturity (NOI down 10%, new 30-year amortizing loan at coupon +200bp, fails below 1.00x). Stress is skipped for loans failing DQ03, DQ04 or DQ06, since the inputs are unreliable.
+**Things that tripped me up in the real data**
 
-## Things a naive parser gets wrong (handled here)
+Portfolio loans show up as one main row plus a row for each property (1, 1-001, 1-002...), so adding up every row double counts the balance. Some loans also have extra notes in the same trust (1A, 1B), which belong to the pool balance but aren't separate loans.
 
-- **Portfolio loans** appear as a parent row (`1`) plus per-property detail rows (`1-001`, `1-002`, ...). Summing every row double counts the pool. Detail rows are excluded from balance totals but still get property-level checks (occupancy).
-- **Most-recent financials are often year-to-date.** A loan reporting Jan to Jun NOI looks like a 50% NOI collapse vs. full-year underwriting. NOI, NCF and debt service are annualized using the financials start and end dates.
-- **Split notes and pari passu loans.** Rows like `1A`, `1B` are extra pieces of loan 1 held in the same trust (counted in pool balance, not as separate loans). Pari passu loans (`loanStructureCode` = PP) are split across several trusts, but NOI and appraisal cover the whole loan, so LTV, debt yield and stress use the whole-loan balance, inferred from whole-loan vs. trust debt service.
-- **LTV isn't a field.** It's computed as current balance / most recent valuation (falling back to the securitization appraisal, which in conduit deals is usually the only one, so LTV here is current balance against an appraisal that is years old).
-- **Conduit deals are almost all fixed rate**, so the +200bp floating shock usually hits zero loans. The refi test is the rate stress that actually matters for fixed-rate CMBS.
+The "most recent" financials are often year to date. A loan reporting January to June NOI looks like it lost half its income compared to full-year underwriting, so I annualize everything using the reporting dates.
 
-## Files
+Pari passu loans are split across several CMBS deals, but the NOI and appraisal on the tape are for the whole property. Comparing those to just this trust's share made one loan look like it had a 1% LTV. I back out the whole-loan balance from the debt service instead.
 
-- `validator.py`: parser, checks, stress, report
-- `make_sample_tape.py`: builds a **synthetic** test tape in the SEC schema with planted errors (one per check), used to verify every check fires
-- `exh_102.xml`: the real ABS-EE asset data file for WFCM 2022-C62 from SEC EDGAR (public)
-- `WFCM_2022-C62_validation.pdf`, `flagged_loans.csv`: output on the real deal
-- `requirements.txt`: Python dependencies
+LTV isn't actually a field. I calculate it from the current balance and the most recent appraisal, which for most loans is still the one from origination.
+
+Almost every conduit loan is fixed rate, so the floating-rate shock usually doesn't hit anything. The refinance test is the rate stress that matters for these deals.
+
+**Files**
+
+validator.py does the parsing, checks, stress tests and report. make_sample_tape.py builds a fake tape in the SEC format with one error planted for each check, which I used to make sure every check actually fires. exh_102.xml is the real WFCM 2022-C62 filing from EDGAR.
